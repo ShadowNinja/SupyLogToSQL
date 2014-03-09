@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cassert>
+#include <cctype>
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -83,6 +84,18 @@ bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line)
 
 	if (is.eof()) {
 		return false;
+	}
+
+	while (isdigit(c)) {
+		// Hack to ignore common corruption of the form:
+		// <TimeStamp> <TimeStamp> <...> <Nick> Hello!
+		is.seekg(-1, std::ios::cur);
+		msg.time = readTimestamp(is);
+		assert(msg.time != -1);
+		is.ignore(2).get(c);
+		if (is.eof()) {
+			return false;
+		}
 	}
 
 	if (c == '<') {  // <Nick> Message.
