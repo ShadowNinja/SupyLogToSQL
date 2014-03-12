@@ -212,7 +212,7 @@ time_t readTimestamp(std::istream & is)
 	char buf[5];	 // Buffer for atoi
 	tm t;	// Time struct
 
-	// ISO 8601 comined date and time format (9999-12-31T23:59:59)
+	// ISO 8601 combined date and time format (9999-12-31T23:59:59)
 	is.get(buf, 5);
 	t.tm_year = atoi(buf) - 1900;
 
