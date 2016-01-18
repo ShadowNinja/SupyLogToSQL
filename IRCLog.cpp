@@ -314,7 +314,6 @@ void DB::beginSave()
 	int res;
 	SQLRES(step(stmt_begin), SQLITE_DONE, "running begin statement");
 	SQLOK(reset(stmt_begin), "reseting begin statement");
-	inTransaction = true;
 }
 
 
@@ -323,7 +322,6 @@ void DB::endSave()
 	int res;
 	SQLRES(step(stmt_commit), SQLITE_DONE, "running commit statement");
 	SQLOK(reset(stmt_commit), "reseting commit statement");
-	inTransaction = false;
 }
 
 };  // namespace IRCLog

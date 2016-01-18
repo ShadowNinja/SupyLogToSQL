@@ -77,8 +77,6 @@ private:
 	std::vector<Network> networks;
 	std::vector<Sender> senders;
 
-	bool inTransaction;
-
 	void loadBuffers();
 	void loadNetworks();
 	void loadSenders();
