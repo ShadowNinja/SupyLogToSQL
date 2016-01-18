@@ -1,8 +1,6 @@
 .scons*
 *.o
 *.obj
-*.a
-*.lib
 FromText
 *.exe
 

@@ -4,13 +4,10 @@ env = Environment(
 	LIBS = ["sqlite3"]
 )
 
-env.MergeFlags("--std=c++11 -g -O3")
+env.MergeFlags("--std=c++11 -O3")
 
-env.StaticLibrary("IRCLog", Split("""
-	IRCLog.cpp
-"""))
-
-env.Program("FromText", "main.cpp",
-	LIBS = ["sqlite3", "IRCLog"]
-)
+env.Program("FromText", [
+	"main.cpp",
+	"IRCLog.cpp"
+])
 
