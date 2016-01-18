@@ -16,7 +16,7 @@ DB::DB(const std::string & filename)
 	SQLOK(open(filename.c_str(), &dbh));
 
 	SQLOK(exec(dbh,
-			"BEGIN;"
+			"BEGIN;\n"
 			"CREATE TABLE IF NOT EXISTS sender (\n"
 			"	id INTEGER NOT NULL,\n"
 			"	nick VARCHAR,\n"
@@ -46,9 +46,9 @@ DB::DB(const std::string & filename)
 			"	PRIMARY KEY (id),\n"
 			"	FOREIGN KEY(bufferid) REFERENCES buffer (id),\n"
 			"	FOREIGN KEY(senderid) REFERENCES sender (id)\n"
-			");"
-			"CREATE INDEX IF NOT EXISTS logTimestamp ON log(timestamp);"
-			"COMMIT;",
+			");\n"
+			"CREATE INDEX IF NOT EXISTS logTimestamp ON log(timestamp);\n"
+			"COMMIT;\n",
 		NULL, NULL, NULL));
 
 	SQLOK(prepare_v2(dbh,
