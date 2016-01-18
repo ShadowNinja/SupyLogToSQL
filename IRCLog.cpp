@@ -1,11 +1,19 @@
 #include "IRCLog.hpp"
 
-#define SQLRES(f, good) \
+#define SQLRES(f, good, msg) do { \
 		res = (sqlite3_##f);\
-		if (res != good) {\
-			throw SQLError(sqlite3_errmsg(dbh), __FILE__, __LINE__);\
-		}
-#define SQLOK(f) SQLRES(f, SQLITE_OK)
+		if (res != good) { \
+			throw SQLError(std::string("SQLite3 error " msg ": ") + \
+					sqlite3_errmsg(dbh)); \
+		} \
+	} while (0);
+
+#define SQLOK(f, msg) SQLRES(f, SQLITE_OK, msg)
+#define PREPARE_STMT(var, name, stmt) \
+		SQLOK(prepare_v2(dbh, stmt, -1, &(var), NULL), \
+			"preparing " name " statement");
+#define FINALIZE_STMT(var, name) \
+		SQLOK(finalize(var), "finalizing " name " statement");
 
 namespace IRCLog
 {
@@ -13,7 +21,7 @@ namespace IRCLog
 DB::DB(const std::string & filename)
 {
 	int res;
-	SQLOK(open(filename.c_str(), &dbh));
+	SQLOK(open(filename.c_str(), &dbh), "opening database");
 
 	SQLOK(exec(dbh,
 			"BEGIN;\n"
@@ -49,39 +57,27 @@ DB::DB(const std::string & filename)
 			");\n"
 			"CREATE INDEX IF NOT EXISTS logTimestamp ON log(timestamp);\n"
 			"COMMIT;\n",
-		NULL, NULL, NULL));
+		NULL, NULL, NULL), "initializing database");
 
-	SQLOK(prepare_v2(dbh,
-			"INSERT INTO log"
-				" (timestamp, type, bufferid, senderid, message)"
-			" VALUES (?, ?, ?, ?, ?);",
-		-1, &stmt_add_message, NULL));
+	PREPARE_STMT(stmt_add_message, "message insertion",
+		"INSERT INTO log"
+			" (timestamp, type, bufferid, senderid, message)"
+		" VALUES (?, ?, ?, ?, ?)");
 
-	SQLOK(prepare_v2(dbh,
-			"INSERT INTO buffer"
-				" (networkid, name)"
-			" VALUES (?, ?);",
-		-1, &stmt_add_buffer, NULL));
+	PREPARE_STMT(stmt_add_buffer, "buffer insertion",
+		"INSERT INTO buffer (networkid, name) "
+		"VALUES (?, ?)");
 
-	SQLOK(prepare_v2(dbh,
-			"INSERT INTO network"
-				" (name)"
-			" VALUES (?);",
-		-1, &stmt_add_network, NULL));
+	PREPARE_STMT(stmt_add_network, "network insertion",
+		"INSERT INTO network (name) "
+		"VALUES (?)");
 
-	SQLOK(prepare_v2(dbh,
-			"INSERT INTO sender "
-				"(nick, user, host)"
-			" VALUES (?, ?, ?);",
-		-1, &stmt_add_sender, NULL));
+	PREPARE_STMT(stmt_add_sender, "sender insertion",
+		"INSERT INTO sender (nick, user, host) "
+		"VALUES (?, ?, ?)");
 
-	SQLOK(prepare_v2(dbh,
-			"BEGIN",
-		-1, &stmt_begin, NULL));
-
-	SQLOK(prepare_v2(dbh,
-			"COMMIT",
-		-1, &stmt_commit, NULL));
+	PREPARE_STMT(stmt_begin, "begin", "BEGIN");
+	PREPARE_STMT(stmt_commit, "commit", "COMMIT");
 
 	loadNetworks();
 	loadBuffers();
@@ -92,14 +88,14 @@ DB::DB(const std::string & filename)
 DB::~DB()
 {
 	int res;
-	SQLOK(finalize(stmt_add_message));
-	SQLOK(finalize(stmt_add_buffer));
-	SQLOK(finalize(stmt_add_network));
-	SQLOK(finalize(stmt_add_sender));
-	SQLOK(finalize(stmt_begin));
-	SQLOK(finalize(stmt_commit));
+	FINALIZE_STMT(stmt_add_message, "message insertion");
+	FINALIZE_STMT(stmt_add_buffer, "buffer insertion");
+	FINALIZE_STMT(stmt_add_network, "network insertion");
+	FINALIZE_STMT(stmt_add_sender, "sender insertion");
+	FINALIZE_STMT(stmt_begin, "begin");
+	FINALIZE_STMT(stmt_commit, "commit");
 
-	SQLOK(close(dbh));
+	SQLOK(close(dbh), "closing database");
 }
 
 
@@ -107,9 +103,8 @@ void DB::loadBuffers()
 {
 	int res;
 	sqlite3_stmt * stmt;
-	SQLOK(prepare_v2(dbh,
-			"SELECT * FROM buffer ORDER BY id ASC;",
-		-1, &stmt, NULL));
+	PREPARE_STMT(stmt, "buffer loading",
+		"SELECT * FROM buffer ORDER BY id ASC");
 
 	while ((res = sqlite3_step(stmt)) == SQLITE_ROW) {
 		Buffer buf;
@@ -119,7 +114,7 @@ void DB::loadBuffers()
 
 		buffers.push_back(std::move(buf));
 	}
-	SQLOK(finalize(stmt));
+	FINALIZE_STMT(stmt, "buffer loading");
 }
 
 
@@ -127,9 +122,8 @@ void DB::loadNetworks()
 {
 	int res;
 	sqlite3_stmt * stmt;
-	SQLOK(prepare_v2(dbh,
-			"SELECT * FROM network ORDER BY id ASC;",
-		-1, &stmt, NULL));
+	PREPARE_STMT(stmt, "network loading",
+		"SELECT * FROM network ORDER BY id ASC");
 
 	while ((res = sqlite3_step(stmt)) == SQLITE_ROW) {
 		Network net;
@@ -138,7 +132,7 @@ void DB::loadNetworks()
 
 		networks.push_back(std::move(net));
 	}
-	SQLOK(finalize(stmt));
+	FINALIZE_STMT(stmt, "network loading");
 }
 
 
@@ -146,9 +140,8 @@ void DB::loadSenders()
 {
 	int res;
 	sqlite3_stmt * stmt;
-	SQLOK(prepare_v2(dbh,
-			"SELECT * FROM sender ORDER BY id ASC;",
-		-1, &stmt, NULL));
+	PREPARE_STMT(stmt, "sender loading",
+		"SELECT * FROM sender ORDER BY id ASC");
 
 	while ((res = sqlite3_step(stmt)) == SQLITE_ROW) {
 		Sender snd;
@@ -159,32 +152,43 @@ void DB::loadSenders()
 
 		senders.push_back(std::move(snd));
 	}
-	SQLOK(finalize(stmt));
+	FINALIZE_STMT(stmt, "sender loading");
 }
 
 
 void DB::addMessage(Message &msg)
 {
 	int res;
-	SQLOK(bind_int64(stmt_add_message, 1, msg.time));
-	SQLOK(bind_int  (stmt_add_message, 2, (int) msg.type));
-	SQLOK(bind_int  (stmt_add_message, 3, msg.bufferid));
-	SQLOK(bind_int  (stmt_add_message, 4, msg.senderid));
-	SQLOK(bind_text (stmt_add_message, 5, msg.text.data(), msg.text.size(), NULL));
+	SQLOK(bind_int64(stmt_add_message, 1, msg.time),
+			"binding message time");
+	SQLOK(bind_int  (stmt_add_message, 2, (int) msg.type),
+			"binding message type");
+	SQLOK(bind_int  (stmt_add_message, 3, msg.bufferid),
+			"binding message bufferid");
+	SQLOK(bind_int  (stmt_add_message, 4, msg.senderid),
+			"binding message senderid");
+	SQLOK(bind_text (stmt_add_message, 5, msg.text.data(), msg.text.size(),
+			NULL), "binding message text");
 
-	SQLRES(step(stmt_add_message), SQLITE_DONE);
-	SQLOK(reset(stmt_add_message));
+	SQLRES(step(stmt_add_message), SQLITE_DONE,
+			"running message insertion statement");
+	SQLOK(reset(stmt_add_message),
+			"reseting message insertion statement");
 }
 
 
 Buffer * DB::addBuffer(Buffer &buf)
 {
 	int res;
-	SQLOK(bind_int (stmt_add_buffer, 1, buf.networkid));
-	SQLOK(bind_text(stmt_add_buffer, 2, buf.name.data(), buf.name.size(), NULL));
+	SQLOK(bind_int (stmt_add_buffer, 1, buf.networkid),
+			"binding buffer networkid");
+	SQLOK(bind_text(stmt_add_buffer, 2, buf.name.data(), buf.name.size(),
+			NULL), "binding buffer name");
 
-	SQLRES(step(stmt_add_buffer), SQLITE_DONE);
-	SQLOK(reset(stmt_add_buffer));
+	SQLRES(step(stmt_add_buffer), SQLITE_DONE,
+			"running buffer insertion statement");
+	SQLOK(reset(stmt_add_buffer),
+			"reseting buffer insertion statement");
 
 	buf.id = sqlite3_last_insert_rowid(dbh);
 
@@ -196,10 +200,13 @@ Buffer * DB::addBuffer(Buffer &buf)
 Network * DB::addNetwork(Network &net)
 {
 	int res;
-	SQLOK(bind_text(stmt_add_network, 1, net.name.data(), net.name.size(), NULL));
+	SQLOK(bind_text(stmt_add_network, 1, net.name.data(), net.name.size(),
+			NULL), "binding network name");
 
-	SQLRES(step(stmt_add_network), SQLITE_DONE);
-	SQLOK(reset(stmt_add_network));
+	SQLRES(step(stmt_add_network), SQLITE_DONE,
+			"running network insertion statement");
+	SQLOK(reset(stmt_add_network),
+			"reseting network insertion statement");
 
 	net.id = sqlite3_last_insert_rowid(dbh);
 
@@ -211,12 +218,17 @@ Network * DB::addNetwork(Network &net)
 Sender * DB::addSender(Sender &snd)
 {
 	int res;
-	SQLOK(bind_text(stmt_add_sender, 1, snd.nick.data(), snd.nick.size(), NULL));
-	SQLOK(bind_text(stmt_add_sender, 2, snd.user.data(), snd.user.size(), NULL));
-	SQLOK(bind_text(stmt_add_sender, 3, snd.host.data(), snd.host.size(), NULL));
+	SQLOK(bind_text(stmt_add_sender, 1, snd.nick.data(), snd.nick.size(),
+			NULL), "binding sender nick");
+	SQLOK(bind_text(stmt_add_sender, 2, snd.user.data(), snd.user.size(),
+			NULL), "binding sender ident");
+	SQLOK(bind_text(stmt_add_sender, 3, snd.host.data(), snd.host.size(),
+			NULL), "binding sender host");
 
-	SQLRES(step(stmt_add_sender), SQLITE_DONE);
-	SQLOK(reset(stmt_add_sender));
+	SQLRES(step(stmt_add_sender), SQLITE_DONE,
+			"running sender insertion statement");
+	SQLOK(reset(stmt_add_sender),
+			"reseting sender insertion statement");
 
 	snd.id = sqlite3_last_insert_rowid(dbh);
 
@@ -300,8 +312,8 @@ const Sender * DB::guessSenderByNick(const std::string & nick) const
 void DB::beginSave()
 {
 	int res;
-	SQLRES(step(stmt_begin), SQLITE_DONE);
-	SQLOK(reset(stmt_begin));
+	SQLRES(step(stmt_begin), SQLITE_DONE, "running begin statement");
+	SQLOK(reset(stmt_begin), "reseting begin statement");
 	inTransaction = true;
 }
 
@@ -309,13 +321,10 @@ void DB::beginSave()
 void DB::endSave()
 {
 	int res;
-	SQLRES(step(stmt_commit), SQLITE_DONE);
-	SQLOK(reset(stmt_commit));
+	SQLRES(step(stmt_commit), SQLITE_DONE, "running commit statement");
+	SQLOK(reset(stmt_commit), "reseting commit statement");
 	inTransaction = false;
 }
-
-#undef SQLOK
-#undef SQLRES
 
 };  // namespace IRCLog
 

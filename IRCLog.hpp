@@ -1,3 +1,6 @@
+#ifndef IRCLOG_HEADER
+#define IRCLOG_HEADER
+
 #include <cstdint>
 #include <ctime>
 #include <string>
@@ -6,20 +9,8 @@
 
 #include "sqlite3.h"
 
-#ifndef IRCLOG_HEADER
-#define IRCLOG_HEADER
 
-namespace IRCLog
-{
-
-template <typename I>
-std::string intToString(I i)
-{
-	std::stringstream ss;
-	ss << i;
-	return ss.str();
-}
-
+namespace IRCLog {
 
 enum class MessageType : uint8_t {
 	Privmsg,
@@ -115,39 +106,8 @@ public:
 };
 
 
-class BaseException : public std::exception {
-public:
-	BaseException(const std::string s) throw() :
-		desc(s)
-	{}
-
-	~BaseException() throw()
-	{}
-
-	const char * what() const throw()
-	{
-		return desc.c_str();
-	}
-
-protected:
-	std::string desc;
-};
-
-
-class SQLError : public BaseException {
-	unsigned int line;
-	std::string file;
-public:
-	SQLError(const std::string s, const char * f, const unsigned int l) :
-		BaseException(s),
-		file(f),
-		line(l)
-	{}
-
-	const char * what() const throw()
-	{
-		return (file + ':' + intToString(line) + "  " + desc).c_str();
-	}
+class SQLError : public std::runtime_error {
+	using runtime_error::runtime_error;
 };
 
 };  // namespace IRCLog
