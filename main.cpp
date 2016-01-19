@@ -8,12 +8,12 @@
 
 #include "IRCLog.hpp"
 
-static_assert(sizeof(std::streampos) > 4, "std::streampos isn't big enough!");
 
 using namespace IRCLog;
 
 int main(int argc, char *argv[]);
 bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line);
+bool readSpecialLine(std::istream & is, DB & db, Message & msg);
 void genericMessage(const MessageType type, std::istream & is, DB & db,
 		Message & msg, const char delim, const short skipNum);
 time_t readTimestamp(std::istream & is);
@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	std::cout << "Initializing..." << std::endl;
+	std::cout << "Saving entries from " << argv[1] << " to " << argv[2] << std::endl;
 
 	std::ifstream is(argv[1], std::ios::in);
 	DB db(argv[2]);
@@ -47,9 +47,7 @@ int main(int argc, char *argv[])
 	time_t start = time(NULL);
 	time_t t = start;
 	db.beginSave();
-	while (!is.eof() && is.good()) {
-		Message msg;
-		msg.bufferid = bufferid;
+	while (is.good()) {
 		if (time(NULL) - t >= 1) {
 			db.endSave();
 			t = time(NULL);
@@ -59,8 +57,9 @@ int main(int argc, char *argv[])
 				<< "        \r" << std::flush;
 			db.beginSave();
 		}
-		bool add = readLine(is, db, msg, numDone);
-		if (add) {
+		Message msg;
+		msg.bufferid = bufferid;
+		if (readLine(is, db, msg, numDone)) {
 			db.addMessage(msg);
 			numDone++;
 		}
@@ -82,9 +81,8 @@ bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line)
 	// Peek at first character of message to find type
 	is.get(c);
 
-	if (is.eof()) {
+	if (is.eof())
 		return false;
-	}
 
 	while (isdigit(c)) {
 		// Hack to ignore common corruption of the form:
@@ -93,9 +91,8 @@ bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line)
 		msg.time = readTimestamp(is);
 		assert(msg.time != -1);
 		is.ignore(2).get(c);
-		if (is.eof()) {
+		if (is.eof())
 			return false;
-		}
 	}
 
 	if (c == '<') {  // <Nick> Message.
@@ -103,93 +100,105 @@ bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line)
 	} else if (c == '-') {  // -Nick- Message.
 		genericMessage(MessageType::Notice, is, db, msg, '-', 1);
 	} else if (c == '*') {  // Action or special
-		is.get(c);
-		if (c == ' ') {  // Action
+		char c2;
+		is.get(c2);
+		if (c2 == ' ') {  // Action
 			genericMessage(MessageType::Action, is, db,
 					msg, ' ', 0);
-		} else if (c == '*') {  // Special
+		} else if (c2 == '*') {  // Special
 			is.ignore(2);  // Ignore "* "
-
-			// These can't be determined from the begining
-			// characters, so we'll have to read the whole line.
-			std::string str;
-			std::streampos pos = is.tellg();
-			std::getline(is, str);
-			is.seekg(pos);
-
-			// XXX: These searches are probably slow, and can be broken with quit/part/kick
-			// reasons.  (eg, `Nick <ident@host> has left #channel ("> has joined ")`)
-			auto notFound = std::string::npos;
-			if (str.find("> has joined ") != notFound) {  // Nick <ident@host> has joined #channel
-				msg.type = MessageType::Join;
-				msg.senderid = readSender(is, db)->id;
-				ignoreTo(is);
-
-			} else if (str.find("> has left ") != notFound) {  // Nick <ident@host> has left #channel (Reason)
-				msg.type = MessageType::Part;
-				msg.senderid = readSender(is, db)->id;
-				readOptionalReason(is, msg.text);
-
-			} else if (str.find(" was kicked by ") != notFound) {  // BadUser was kicked by Nick (Reason)
-				msg.type = MessageType::Kick;
-				msg.senderid = readNickSender(is, db)->id;
-				is.ignore(14);  // Ignore "was kicked by "
-				bool end = readToEndDelim(is, msg.text, ' ');
-				if (!end) {
-					std::string reason;
-					readOptionalReason(is, reason);
-					if (!reason.empty()) {
-						msg.text += ' ';
-						msg.text += reason;
-					}
-				}
-
-			} else if (str.find("> has quit IRC") != notFound) {  // Nick <ident@host> has quit IRC (Quit: Reason)
-				msg.type = MessageType::Quit;
-				msg.senderid = readSender(is, db)->id;
-				ignoreTo(is, '(');
-				std::getline(is, msg.text);
-				if (msg.text.size() > 0) msg.text.pop_back();
-
-			} else if (str.find(" sets mode: ") != notFound) {  // Nick sets mode: +o Nick
-				msg.type = MessageType::Mode;
-				msg.senderid = readNickSender(is, db)->id;
-				ignoreTo(is, ':');
-				is.ignore(1);  // Ignore space
-				std::getline(is, msg.text);
-
-			} else if (str.find(" is now known as ") != notFound) {  // Nick1 is now known as Nick2
-				msg.type = MessageType::Nick;
-				const Sender * sender = readNickSender(is, db);
-				msg.senderid = sender->id;
-				is.ignore(16);  // Ignore "is now known as "
-				std::getline(is, msg.text);
-				// Generate a new sender with the old user and host
-				Sender snd;
-				snd.nick = msg.text;
-				snd.user = sender->user;
-				snd.host = sender->host;
-				db.getSender(snd, true);  // Use getSender to prevent duplicates
-
-			} else if (str.find(" changes topic to \"") != notFound) {  // Nick changes topic to ""
-				msg.type = MessageType::Topic;
-				msg.senderid = readNickSender(is, db)->id;
-				is.ignore(18);  // Ignore "changes topic to \""
-				std::getline(is, msg.text);
-				if (msg.text.size() > 0) msg.text.pop_back();
-
-			} else {
+			if (!readSpecialLine(is, db, msg))
 				goto corrupt;
-			}
 		} else {
 			goto corrupt;
 		}
 	} else {
-		corrupt:
-		std::string s;
-		std::getline(is, s);
-		std::cout << "\nLog file corrupt near line " << line << ": " << s << std::endl;
-		exit(EXIT_FAILURE);
+		goto corrupt;
+	}
+	return true;
+
+corrupt:
+	std::string s;
+	std::getline(is, s);
+	std::cout << "\nLog file corrupt near line " << line << ": " << s << std::endl;
+	exit(EXIT_FAILURE);
+}
+
+
+bool readSpecialLine(std::istream & is, DB & db, Message & msg)
+{
+	// These can't be determined from the begining
+	// characters, so we'll have to read the whole line.
+	std::string str;
+	std::streampos pos = is.tellg();
+	std::getline(is, str);
+	is.seekg(pos);
+
+	// XXX: These searches are probably slow, and can be broken with quit/part/kick
+	// reasons.  (eg, `Nick <ident@host> has left #channel ("> has joined ")`)
+	auto notFound = std::string::npos;
+	if (str.find("> has joined ") != notFound) {  // Nick <ident@host> has joined #channel
+		msg.type = MessageType::Join;
+		msg.senderid = readSender(is, db)->id;
+		ignoreTo(is);
+
+	} else if (str.find("> has left ") != notFound) {  // Nick <ident@host> has left #channel (Reason)
+		msg.type = MessageType::Part;
+		msg.senderid = readSender(is, db)->id;
+		readOptionalReason(is, msg.text);
+
+	} else if (str.find(" was kicked by ") != notFound) {  // BadUser was kicked by Nick (Reason)
+		msg.type = MessageType::Kick;
+		msg.senderid = readNickSender(is, db)->id;
+		is.ignore(14);  // Ignore "was kicked by "
+		bool end = readToEndDelim(is, msg.text, ' ');
+		if (!end) {
+			std::string reason;
+			readOptionalReason(is, reason);
+			if (!reason.empty()) {
+				msg.text += ' ';
+				msg.text += reason;
+			}
+		}
+
+	} else if (str.find("> has quit IRC") != notFound) {  // Nick <ident@host> has quit IRC (Quit: Reason)
+		msg.type = MessageType::Quit;
+		msg.senderid = readSender(is, db)->id;
+		ignoreTo(is, '(');
+		std::getline(is, msg.text);
+		if (msg.text.size() > 0) // Remove closing parenthasis
+			msg.text.pop_back();
+
+	} else if (str.find(" sets mode: ") != notFound) {  // Nick sets mode: +o Nick
+		msg.type = MessageType::Mode;
+		msg.senderid = readNickSender(is, db)->id;
+		ignoreTo(is, ':');
+		is.ignore(1);  // Ignore space
+		std::getline(is, msg.text);
+
+	} else if (str.find(" is now known as ") != notFound) {  // Nick1 is now known as Nick2
+		msg.type = MessageType::Nick;
+		const Sender * sender = readNickSender(is, db);
+		msg.senderid = sender->id;
+		is.ignore(16);  // Ignore "is now known as "
+		std::getline(is, msg.text);
+		// Generate a new sender with the old user and host
+		Sender snd;
+		snd.nick = msg.text;
+		snd.user = sender->user;
+		snd.host = sender->host;
+		db.getSender(snd, true);  // Use getSender to prevent duplicates
+
+	} else if (str.find(" changes topic to \"") != notFound) {  // Nick changes topic to ""
+		msg.type = MessageType::Topic;
+		msg.senderid = readNickSender(is, db)->id;
+		is.ignore(18);  // Ignore "changes topic to \""
+		std::getline(is, msg.text);
+		if (msg.text.size() > 0)  // Remove closing quote
+			msg.text.pop_back();
+
+	} else {
+		return false;
 	}
 	return true;
 }
@@ -272,7 +281,8 @@ void readOptionalReason(std::istream & is, std::string & reason)
 			return;
 		} else if (c == '(') {
 			std::getline(is, reason);
-			if (!reason.empty()) reason.pop_back();
+			if (!reason.empty())  // Remove closing parenthesis
+				reason.pop_back();
 			return;
 		}
 	}
