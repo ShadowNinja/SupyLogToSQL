@@ -76,21 +76,22 @@ bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t done)
 	std::streampos line_start = is.tellg();
 
 	msg.time = readTimestamp(is);
-	assert(msg.time != -1);
+	if (is.eof())
+		return false;
+	if (msg.time == -1)
+		goto corrupt;
 
 	is.ignore(2);  // Ignore dual-space time delemiter
 	// Peek at first character of message to find type
 	is.get(c);
-
-	if (is.eof())
-		return false;
 
 	while (isdigit(c)) {
 		// Hack to ignore common corruption of the form:
 		// <TimeStamp> <TimeStamp> <...> <Nick> Hello!
 		is.seekg(-1, std::ios::cur);
 		msg.time = readTimestamp(is);
-		assert(msg.time != -1);
+		if (msg.time == -1)
+			goto corrupt;
 		is.ignore(2).get(c);
 		if (is.eof())
 			return false;
@@ -220,29 +221,26 @@ void genericMessage(const MessageType type, std::istream & is, DB & db,
 
 time_t readTimestamp(std::istream & is)
 {
-	char buf[5];	 // Buffer for atoi
-	tm t;	// Time struct
+	char buf[5];  // Buffer for strtoul
+	char * endptr; // For error checking
+	tm t;  // Time struct
+
+#define READ_DATE_PART(len, part) \
+	is.get(buf, len + 1); \
+	t.tm_##part = strtoul(buf, &endptr, 10); \
+	if (endptr != buf + len) \
+		return -1;
+#define READ_DATE_PART_IGN(len, part) is.ignore(); READ_DATE_PART(len, part)
 
 	// ISO 8601 combined date and time format (9999-12-31T23:59:59)
-	is.get(buf, 5);
-	t.tm_year = atoi(buf) - 1900;
-
-	is.ignore().get(buf, 3);
-	t.tm_mon = atoi(buf);
-
-	is.ignore().get(buf, 3);
-	t.tm_mday = atoi(buf);
-
-	is.ignore().get(buf, 3);
-	t.tm_hour = atoi(buf);
-
-	is.ignore().get(buf, 3);
-	t.tm_min = atoi(buf);
-
-	is.ignore().get(buf, 3);
-	t.tm_sec = atoi(buf);
-
-	t.tm_isdst = false;
+	READ_DATE_PART(4, year);
+	t.tm_year -= 1900;
+	READ_DATE_PART_IGN(2, mon);
+	READ_DATE_PART_IGN(2, mday);
+	READ_DATE_PART_IGN(2, hour);
+	READ_DATE_PART_IGN(2, min);
+	READ_DATE_PART_IGN(2, sec);
+	t.tm_isdst = -1;
 
 	return mktime(&t);
 }
