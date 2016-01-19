@@ -137,20 +137,28 @@ bool readSpecialLine(std::istream & is, DB & db, Message & msg)
 	std::getline(is, str);
 	is.seekg(pos);
 
-	// XXX: These searches are probably slow, and can be broken with quit/part/kick
-	// reasons.  (eg, `Nick <ident@host> has left #channel ("> has joined ")`)
-	auto notFound = std::string::npos;
-	if (str.find("> has joined ") != notFound) {  // Nick <ident@host> has joined #channel
-		msg.type = MessageType::Join;
-		msg.senderid = readSender(is, db)->id;
-		ignoreTo(is);
+	auto after_nick = str.find(' ') + 1;
+	if (str[after_nick] == '<') {
+		auto after_info = str.find(' ', after_nick) + 1;
+		if (str.compare(after_info, 10, "has joined") == 0) {  // Nick <ident@host> has joined #channel
+			msg.type = MessageType::Join;
+			msg.senderid = readSender(is, db)->id;
+			ignoreTo(is);
 
-	} else if (str.find("> has left ") != notFound) {  // Nick <ident@host> has left #channel (Reason)
-		msg.type = MessageType::Part;
-		msg.senderid = readSender(is, db)->id;
-		readOptionalReason(is, msg.text);
+		} else if (str.compare(after_info, 8, "has left") == 0) {  // Nick <ident@host> has left #channel (Reason)
+			msg.type = MessageType::Part;
+			msg.senderid = readSender(is, db)->id;
+			readOptionalReason(is, msg.text);
 
-	} else if (str.find(" was kicked by ") != notFound) {  // BadUser was kicked by Nick (Reason)
+		} else if (str.compare(after_info, 8, "has quit") == 0) {  // Nick <ident@host> has quit IRC (Quit: Reason)
+			msg.type = MessageType::Quit;
+			msg.senderid = readSender(is, db)->id;
+			ignoreTo(is, '(');
+			std::getline(is, msg.text);
+			if (msg.text.size() > 0) // Remove closing parenthasis
+				msg.text.pop_back();
+		}
+	} else if (str.compare(after_nick, 10, "was kicked") == 0) {  // BadUser was kicked by Nick (Reason)
 		msg.type = MessageType::Kick;
 		msg.senderid = readNickSender(is, db)->id;
 		is.ignore(14);  // Ignore "was kicked by "
@@ -164,22 +172,14 @@ bool readSpecialLine(std::istream & is, DB & db, Message & msg)
 			}
 		}
 
-	} else if (str.find("> has quit IRC") != notFound) {  // Nick <ident@host> has quit IRC (Quit: Reason)
-		msg.type = MessageType::Quit;
-		msg.senderid = readSender(is, db)->id;
-		ignoreTo(is, '(');
-		std::getline(is, msg.text);
-		if (msg.text.size() > 0) // Remove closing parenthasis
-			msg.text.pop_back();
-
-	} else if (str.find(" sets mode: ") != notFound) {  // Nick sets mode: +o Nick
+	} else if (str.compare(after_nick, 9, "sets mode") == 0) {  // Nick sets mode: +o Nick
 		msg.type = MessageType::Mode;
 		msg.senderid = readNickSender(is, db)->id;
 		ignoreTo(is, ':');
 		is.ignore(1);  // Ignore space
 		std::getline(is, msg.text);
 
-	} else if (str.find(" is now known as ") != notFound) {  // Nick1 is now known as Nick2
+	} else if (str.compare(after_nick, 15, "is now known as") == 0) {  // Nick1 is now known as Nick2
 		msg.type = MessageType::Nick;
 		const Sender * sender = readNickSender(is, db);
 		msg.senderid = sender->id;
@@ -192,7 +192,7 @@ bool readSpecialLine(std::istream & is, DB & db, Message & msg)
 		snd.host = sender->host;
 		db.getSender(snd, true);  // Use getSender to prevent duplicates
 
-	} else if (str.find(" changes topic to \"") != notFound) {  // Nick changes topic to ""
+	} else if (str.compare(after_nick, 16, "changes topic to") == 0) {  // Nick changes topic to ""
 		msg.type = MessageType::Topic;
 		msg.senderid = readNickSender(is, db)->id;
 		is.ignore(18);  // Ignore "changes topic to \""
