@@ -12,7 +12,7 @@
 using namespace IRCLog;
 
 int main(int argc, char *argv[]);
-bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line);
+bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t done);
 bool readSpecialLine(std::istream & is, DB & db, Message & msg);
 void genericMessage(const MessageType type, std::istream & is, DB & db,
 		Message & msg, const char delim, const short skipNum);
@@ -70,9 +70,10 @@ int main(int argc, char *argv[])
 }
 
 
-bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line)
+bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t done)
 {
 	char c;
+	std::streampos line_start = is.tellg();
 
 	msg.time = readTimestamp(is);
 	assert(msg.time != -1);
@@ -118,9 +119,10 @@ bool readLine(std::istream & is, DB & db, Message & msg, const uint64_t line)
 	return true;
 
 corrupt:
+	is.seekg(line_start);
 	std::string s;
 	std::getline(is, s);
-	std::cout << "\nLog file corrupt near line " << line << ": " << s << std::endl;
+	std::cout << "\nLog file corrupt near line " << done + 1 << ": " << s << std::endl;
 	exit(EXIT_FAILURE);
 }
 
