@@ -1,5 +1,7 @@
 #include "IRCLog.hpp"
 
+#include <iostream>
+
 #define SQLRES(f, good, msg) do { \
 		res = (sqlite3_##f);\
 		if (res != good) { \
@@ -88,14 +90,18 @@ DB::DB(const std::string & filename)
 DB::~DB()
 {
 	int res;
-	FINALIZE_STMT(stmt_add_message, "message insertion");
-	FINALIZE_STMT(stmt_add_buffer, "buffer insertion");
-	FINALIZE_STMT(stmt_add_network, "network insertion");
-	FINALIZE_STMT(stmt_add_sender, "sender insertion");
-	FINALIZE_STMT(stmt_begin, "begin");
-	FINALIZE_STMT(stmt_commit, "commit");
+	try {
+		FINALIZE_STMT(stmt_add_message, "message insertion");
+		FINALIZE_STMT(stmt_add_buffer, "buffer insertion");
+		FINALIZE_STMT(stmt_add_network, "network insertion");
+		FINALIZE_STMT(stmt_add_sender, "sender insertion");
+		FINALIZE_STMT(stmt_begin, "begin");
+		FINALIZE_STMT(stmt_commit, "commit");
 
-	SQLOK(close(dbh), "closing database");
+		SQLOK(close(dbh), "closing database");
+	} catch (std::exception &e) {
+		std::cerr << "Failed to close database: " << e.what() << std::endl;
+	}
 }
 
 
