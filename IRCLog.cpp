@@ -57,6 +57,7 @@ DB::DB(const std::string & filename)
 			"	FOREIGN KEY (\"bufferid\") REFERENCES \"buffer\" (\"id\"),\n"
 			"	FOREIGN KEY (\"senderid\") REFERENCES \"sender\" (\"id\")\n"
 			");\n"
+			"CREATE INDEX IF NOT EXISTS \"logBufferTimestamp\" ON \"log\" (\"bufferid\", \"timestamp\");\n"
 			"CREATE INDEX IF NOT EXISTS \"logTimestamp\" ON \"log\" (\"timestamp\");\n"
 			"COMMIT;\n",
 		NULL, NULL, NULL), "initializing database");
