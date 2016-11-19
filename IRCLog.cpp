@@ -27,55 +27,55 @@ DB::DB(const std::string & filename)
 
 	SQLOK(exec(dbh,
 			"BEGIN;\n"
-			"CREATE TABLE IF NOT EXISTS sender (\n"
-			"	id INTEGER NOT NULL,\n"
-			"	nick VARCHAR,\n"
-			"	user VARCHAR,\n"
-			"	host VARCHAR,\n"
-			"	PRIMARY KEY (id)\n"
+			"CREATE TABLE IF NOT EXISTS \"sender\" (\n"
+			"	\"id\" INTEGER NOT NULL,\n"
+			"	\"nick\" VARCHAR,\n"
+			"	\"user\" VARCHAR,\n"
+			"	\"host\" VARCHAR,\n"
+			"	PRIMARY KEY (\"id\")\n"
 			");\n"
-			"CREATE TABLE IF NOT EXISTS network (\n"
-			"	id INTEGER NOT NULL,\n"
-			"	name VARCHAR,\n"
-			"	PRIMARY KEY (id)\n"
+			"CREATE TABLE IF NOT EXISTS \"network\" (\n"
+			"	\"id\" INTEGER NOT NULL,\n"
+			"	\"name\" VARCHAR,\n"
+			"	PRIMARY KEY (\"id\")\n"
 			");\n"
-			"CREATE TABLE IF NOT EXISTS buffer (\n"
-			"	id INTEGER NOT NULL,\n"
-			"	networkid INTEGER NOT NULL,\n"
-			"	name VARCHAR,\n"
-			"	PRIMARY KEY (id),\n"
-			"	FOREIGN KEY(networkid) REFERENCES network (id)\n"
+			"CREATE TABLE IF NOT EXISTS \"buffer\" (\n"
+			"	\"id\" INTEGER NOT NULL,\n"
+			"	\"networkid\" INTEGER NOT NULL,\n"
+			"	\"name\" VARCHAR,\n"
+			"	PRIMARY KEY (\"id\"),\n"
+			"	FOREIGN KEY (\"networkid\") REFERENCES \"network\" (\"id\")\n"
 			");\n"
-			"CREATE TABLE IF NOT EXISTS log (\n"
-			"	id INTEGER NOT NULL,\n"
-			"	type INTEGER NOT NULL,\n"
-			"	timestamp INTEGER NOT NULL,\n"
-			"	bufferid INTEGER NOT NULL,\n"
-			"	senderid INTEGER NOT NULL,\n"
-			"	message VARCHAR,\n"
-			"	PRIMARY KEY (id),\n"
-			"	FOREIGN KEY(bufferid) REFERENCES buffer (id),\n"
-			"	FOREIGN KEY(senderid) REFERENCES sender (id)\n"
+			"CREATE TABLE IF NOT EXISTS \"log\" (\n"
+			"	\"id\" INTEGER NOT NULL,\n"
+			"	\"type\" INTEGER NOT NULL,\n"
+			"	\"timestamp\" INTEGER NOT NULL,\n"
+			"	\"bufferid\" INTEGER NOT NULL,\n"
+			"	\"senderid\" INTEGER NOT NULL,\n"
+			"	\"message\" VARCHAR,\n"
+			"	PRIMARY KEY (\"id\"),\n"
+			"	FOREIGN KEY (\"bufferid\") REFERENCES \"buffer\" (\"id\"),\n"
+			"	FOREIGN KEY (\"senderid\") REFERENCES \"sender\" (\"id\")\n"
 			");\n"
-			"CREATE INDEX IF NOT EXISTS logTimestamp ON log(timestamp);\n"
+			"CREATE INDEX IF NOT EXISTS \"logTimestamp\" ON \"log\" (\"timestamp\");\n"
 			"COMMIT;\n",
 		NULL, NULL, NULL), "initializing database");
 
 	PREPARE_STMT(stmt_add_message, "message insertion",
-		"INSERT INTO log"
-			" (timestamp, type, bufferid, senderid, message)"
+		"INSERT INTO \"log\""
+			" (\"timestamp\", \"type\", \"bufferid\", \"senderid\", \"message\")"
 		" VALUES (?, ?, ?, ?, ?)");
 
 	PREPARE_STMT(stmt_add_buffer, "buffer insertion",
-		"INSERT INTO buffer (networkid, name) "
+		"INSERT INTO \"buffer\" (\"networkid\", \"name\") "
 		"VALUES (?, ?)");
 
 	PREPARE_STMT(stmt_add_network, "network insertion",
-		"INSERT INTO network (name) "
+		"INSERT INTO \"network\" (\"name\") "
 		"VALUES (?)");
 
 	PREPARE_STMT(stmt_add_sender, "sender insertion",
-		"INSERT INTO sender (nick, user, host) "
+		"INSERT INTO \"sender\" (\"nick\", \"user\", \"host\") "
 		"VALUES (?, ?, ?)");
 
 	PREPARE_STMT(stmt_begin, "begin", "BEGIN");
@@ -129,7 +129,7 @@ void DB::loadNetworks()
 	int res;
 	sqlite3_stmt * stmt;
 	PREPARE_STMT(stmt, "network loading",
-		"SELECT * FROM network ORDER BY id ASC");
+		"SELECT * FROM \"network\" ORDER BY \"id\" ASC");
 
 	while ((res = sqlite3_step(stmt)) == SQLITE_ROW) {
 		Network net;
@@ -147,7 +147,7 @@ void DB::loadSenders()
 	int res;
 	sqlite3_stmt * stmt;
 	PREPARE_STMT(stmt, "sender loading",
-		"SELECT * FROM sender ORDER BY id ASC");
+		"SELECT * FROM \"sender\" ORDER BY \"id\" ASC");
 
 	while ((res = sqlite3_step(stmt)) == SQLITE_ROW) {
 		Sender snd;
