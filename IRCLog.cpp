@@ -26,6 +26,7 @@ DB::DB(const std::string & filename)
 	SQLOK(open(filename.c_str(), &dbh), "opening database");
 
 	SQLOK(exec(dbh,
+			"PRAGMA synchronous=0;\n"
 			"BEGIN;\n"
 			"CREATE TABLE IF NOT EXISTS \"sender\" (\n"
 			"	\"id\" INTEGER NOT NULL,\n"
